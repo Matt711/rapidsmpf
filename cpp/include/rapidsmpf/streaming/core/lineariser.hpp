@@ -94,7 +94,8 @@ class Lineariser {
     Actor drain() {
         ShutdownAtExit c{ch_out_};
         co_await ctx_->executor()->schedule();
-        while (!queues_.empty()) {
+        bool ch_out_shutdown = false;
+        while (!queues_.empty() && !ch_out_shutdown) {
             for (auto& q : queues_) {
                 auto [receipt, msg] = co_await q->receive();
                 if (msg.empty()) {
@@ -102,7 +103,15 @@ class Lineariser {
                     continue;
                 }
                 if (!co_await ch_out_->send(std::move(msg))) {
-                    // Output channel is shut down, tell the producers to shutdown.
+                    // Output channel is shut down.  Stop receiving from all queues;
+                    // the shutdown section below will call q->shutdown() on every
+                    // remaining queue, which unblocks any produce_chunks actors that
+                    // are blocked on acquire() waiting for the semaphore.
+                    //
+                    // Note: we do NOT call `co_await receipt` here because we are
+                    // abandoning the message.  The semaphore credit is recovered by
+                    // q->shutdown() → semaphore_.shutdown() which wakes all waiters.
+                    ch_out_shutdown = true;
                     break;
                 }
                 co_await receipt;
