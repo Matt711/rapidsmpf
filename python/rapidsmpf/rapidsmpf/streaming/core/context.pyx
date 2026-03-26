@@ -199,6 +199,19 @@ cdef class Context:
         """
         return self._br.stream_pool_size()
 
+    def cancel_network(self):
+        """
+        Broadcast a cancellation signal to all channels and memory reservations.
+
+        Shuts down all channels created by this context and all memory reservation
+        coordinators. This causes any actors blocked on channel or memory operations
+        to unblock and exit cleanly.
+
+        This method is thread-safe and idempotent.
+        """
+        with nogil:
+            deref(self._handle).cancel_network()
+
     def create_channel(self):
         """
         Create a new channel associated with this context.

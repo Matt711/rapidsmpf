@@ -12,7 +12,7 @@ from functools import partial, wraps
 
 from rapidsmpf.streaming.core.channel import Channel
 from rapidsmpf.streaming.core.context import Context
-from rapidsmpf.streaming.core.context cimport Context
+from rapidsmpf.streaming.core.context cimport Context, cpp_Context
 
 
 cdef class CppActor:
@@ -187,7 +187,7 @@ def define_actor(*, extra_channels=()):
     return partial(decorate_actor, extra_channels)
 
 
-def run_actor_network(*, actors, py_executor = None):
+def run_actor_network(*, actors, py_executor = None, context = None):
     """
     Run streaming actors to completion (blocking).
 
@@ -203,6 +203,10 @@ def run_actor_network(*, actors, py_executor = None):
     py_executor
         Executor used to run Python actors (required if any Python actors are present).
         If no Python actors are provided, this is ignored.
+    context
+        Optional rapidsmpf Context. When provided, all channels and memory
+        reservations are shut down on the first actor failure, causing any
+        actors blocked on those operations to unblock and exit.
 
     Warnings
     --------
@@ -235,6 +239,7 @@ def run_actor_network(*, actors, py_executor = None):
     >>> run_actor_network(
     ...     actors=[cpp_actor, python_actor(context, ch_out=ch)],
     ...     py_executor=ThreadPoolExecutor(max_workers=1),
+    ...     context=context,
     ... )
     >>> results = output.release()
     >>> tbl = TableChunk.from_message(results[0])
@@ -244,6 +249,7 @@ def run_actor_network(*, actors, py_executor = None):
 
     # Split actors into C++ actors and Python actors.
     cdef vector[cpp_Actor] cpp_actors
+    cdef shared_ptr[cpp_Context] ctx_handle
     cdef list py_actors = []
     for actor in actors:
         if isinstance(actor, CppActor):
@@ -255,15 +261,32 @@ def run_actor_network(*, actors, py_executor = None):
                 "Unknown actor type, did you forget to use `@define_actor()`?"
             )
 
+    if context is not None:
+        ctx_handle = (<Context>context)._handle
+
     if len(py_actors) > 0:
         if py_executor is None:
             raise ValueError("must provide a py_executor to run Python actors.")
         py_future = py_executor.submit(asyncio.run, run_py_actors(py_actors))
 
+    cdef object cpp_exc = None
     try:
         if cpp_actors.size() > 0:
-            with nogil:
-                cpp_run_actor_network(move(cpp_actors))
+            if context is not None:
+                with nogil:
+                    cpp_run_actor_network_with_ctx(move(cpp_actors), ctx_handle)
+            else:
+                with nogil:
+                    cpp_run_actor_network(move(cpp_actors))
+    except Exception as e:
+        cpp_exc = e
     finally:
         if len(py_actors) > 0:
-            py_future.result()  # This will raise any unhandled exception.
+            try:
+                py_future.result()
+            except Exception as py_exc:
+                if cpp_exc is None:
+                    raise  # Python error is the primary failure
+                # C++ error is primary; Python exit was triggered by channel shutdown
+        if cpp_exc is not None:
+            raise cpp_exc

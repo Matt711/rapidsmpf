@@ -6,7 +6,9 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #include <coro/coro.hpp>
 
@@ -185,9 +187,24 @@ class Context {
     /**
      * @brief Create a new channel associated with this context.
      *
+     * The channel is registered internally and will be shut down if
+     * `cancel_network()` is called.
+     *
      * @return A shared pointer to the newly created channel.
      */
     [[nodiscard]] std::shared_ptr<Channel> create_channel() const noexcept;
+
+    /**
+     * @brief Broadcast a cancellation signal to all channels and memory reservations.
+     *
+     * Shuts down all channels created by this context and all memory reservation
+     * coordinators. This causes any actors blocked on channel or memory operations
+     * to unblock and exit cleanly.
+     *
+     * This method is thread-safe and idempotent: the first call triggers the
+     * broadcast; subsequent calls have no effect.
+     */
+    void cancel_network() noexcept;
 
     /**
      * @brief Returns the spillable messages collection.
@@ -230,6 +247,9 @@ class Context {
     std::array<std::shared_ptr<MemoryReserveOrWait>, MEMORY_TYPES.size()> memory_ = {};
     std::shared_ptr<SpillableMessages> spillable_messages_;
     SpillManager::SpillFunctionID spill_function_id_{};
+    mutable std::atomic<bool> network_cancelled_{false};
+    mutable std::vector<std::weak_ptr<Channel>> registered_channels_;
+    mutable std::mutex registry_mutex_;
 };
 
 }  // namespace rapidsmpf::streaming

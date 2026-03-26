@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,8 +12,6 @@ from rapidsmpf.streaming.core.actor import define_actor, run_actor_network
 from rapidsmpf.streaming.core.leaf_actor import pull_from_channel
 
 if TYPE_CHECKING:
-    from concurrent.futures import ThreadPoolExecutor
-
     from rapidsmpf.streaming.core.actor import CppActor, PyActor
     from rapidsmpf.streaming.core.channel import Channel
     from rapidsmpf.streaming.core.context import Context
@@ -44,7 +43,39 @@ def test_task_exceptions(context: Context, py_executor: ThreadPoolExecutor) -> N
     ]
 
     with pytest.raises(RuntimeError, match="Throwing in task"):
-        run_actor_network(actors=actors, py_executor=py_executor)
+        run_actor_network(actors=actors, py_executor=py_executor, context=context)
 
     messages = deferred.release()
     assert len(messages) == 0
+
+
+def test_cancel_network_unblocks_unconnected_actor(
+    context: Context,
+) -> None:
+    """
+    A Python actor that fails must unblock an unconnected actor blocked on a
+    channel recv via cancel_network().
+
+    Without cancel_network(), the unconnected actor would block forever on
+    ch_b.recv() because no producer ever sends to or drains ch_b.
+    """
+
+    @define_actor()
+    async def actor_a_fails(ctx: Context, ch_dummy: Channel) -> None:
+        raise RuntimeError("actor_a_failure")
+
+    @define_actor()
+    async def actor_b_blocks(ctx: Context, ch_b: Channel) -> None:
+        # Blocks until ch_b is shut down by cancel_network().
+        await ch_b.recv(ctx)
+
+    ch_dummy: Channel[Payload] = context.create_channel()
+    ch_b: Channel[Payload] = context.create_channel()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with pytest.raises(RuntimeError, match="actor_a_failure"):
+            run_actor_network(
+                actors=[actor_a_fails(context, ch_dummy), actor_b_blocks(context, ch_b)],
+                py_executor=executor,
+                context=context,
+            )

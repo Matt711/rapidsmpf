@@ -16,6 +16,22 @@ namespace rapidsmpf::streaming {
 
 namespace {
 
+// These free-function coroutines exist because lambda coroutines store the
+// implicit `this` pointer to the closure in the coroutine frame, not a copy
+// of the closure itself.  A temporary lambda is destroyed immediately after
+// operator() returns, leaving `this` dangling by the time the pool thread
+// resumes the coroutine.  Taking the shared_ptr as a *value parameter* of a
+// named coroutine function causes the coroutine mechanism to copy the
+// shared_ptr into the frame, so the owned object stays alive for the full
+// lifetime of the coroutine.
+coro::task<void> shutdown_channel_task(std::shared_ptr<Channel> ch) {
+    co_await ch->shutdown();
+}
+
+coro::task<void> shutdown_memory_task(std::shared_ptr<MemoryReserveOrWait> mr) {
+    co_await mr->shutdown();
+}
+
 /**
  * @brief Spill messages until the target amount of memory has been released.
  *
@@ -158,7 +174,32 @@ std::shared_ptr<Statistics> Context::statistics() const noexcept {
 }
 
 std::shared_ptr<Channel> Context::create_channel() const noexcept {
-    return std::shared_ptr<Channel>(new Channel(spillable_messages()));
+    auto ch = std::shared_ptr<Channel>(new Channel(spillable_messages()));
+    std::unique_lock lock{registry_mutex_};
+    registered_channels_.emplace_back(ch);
+    return ch;
+}
+
+void Context::cancel_network() noexcept {
+    if (network_cancelled_.exchange(true, std::memory_order::acq_rel)) return;
+
+    std::vector<std::weak_ptr<Channel>> channels;
+    {
+        std::unique_lock lock{registry_mutex_};
+        channels = registered_channels_;
+    }
+
+    for (auto& wch : channels) {
+        if (auto ch = wch.lock()) {
+            executor_->spawn_detached(shutdown_channel_task(std::move(ch)));
+        }
+    }
+
+    for (auto& mr : memory_) {
+        if (mr) {
+            executor_->spawn_detached(shutdown_memory_task(mr));
+        }
+    }
 }
 
 std::shared_ptr<BoundedQueue> Context::create_bounded_queue(

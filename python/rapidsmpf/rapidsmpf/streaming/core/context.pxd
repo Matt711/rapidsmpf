@@ -20,6 +20,7 @@ cdef extern from "<rapidsmpf/streaming/core/context.hpp>" nogil:
         shared_ptr[cpp_Channel] create_channel() except +ex_handler
         shared_ptr[cpp_SpillableMessages] spillable_messages() noexcept
         void shutdown() noexcept
+        void cancel_network() noexcept
         shared_ptr[cpp_MemoryReserveOrWait] memory(MemoryType mem_type) noexcept
 
 

@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES.
 # SPDX-License-Identifier: Apache-2.0
 
-from libcpp.memory cimport unique_ptr
+from libcpp.memory cimport shared_ptr, unique_ptr
 from libcpp.vector cimport vector
 
 from rapidsmpf._detail.exception_handling cimport ex_handler
+from rapidsmpf.streaming.core.context cimport cpp_Context
 
 
 cdef extern from "<rapidsmpf/streaming/core/actor.hpp>" nogil:
@@ -13,6 +14,10 @@ cdef extern from "<rapidsmpf/streaming/core/actor.hpp>" nogil:
 
     cdef void cpp_run_actor_network \
         "rapidsmpf::streaming::run_actor_network"(vector[cpp_Actor]) \
+        except +ex_handler
+
+    cdef void cpp_run_actor_network_with_ctx \
+        "rapidsmpf::streaming::run_actor_network"(vector[cpp_Actor], shared_ptr[cpp_Context]) \
         except +ex_handler
 
 
