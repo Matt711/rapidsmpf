@@ -85,8 +85,8 @@ TEST_F(StreamingLineariser, ChOutShutdownUnblocksProducers) {
     //
     // Test outline:
     //   - 2 producers each sending 3 messages through a Lineariser.
-    //   - A consumer that reads exactly 1 message from ch_out and then calls
-    //     cancel_network(), which shuts down ch_out and all other channels.
+    //   - A consumer that reads exactly 1 message from ch_out and then shuts
+    //     it down directly, simulating a downstream consumer failure.
     //   - Without the fix the network would deadlock; with the fix it completes.
 
     constexpr std::size_t num_producers = 2;
@@ -133,23 +133,24 @@ TEST_F(StreamingLineariser, ChOutShutdownUnblocksProducers) {
     }
     tasks.push_back(lineariser.drain());
 
-    // Consumer: reads exactly 1 message from ch_out, then calls cancel_network()
-    // to simulate a downstream failure.  cancel_network() shuts down ch_out (and
-    // all other registered channels), which causes drain()'s next ch_out_->send()
-    // to return false — the exact condition that triggered the deadlock.
+    // Consumer: reads exactly 1 message from ch_out, then shuts it down to
+    // simulate a downstream failure.  After shutdown, drain()'s next
+    // ch_out_->send() returns false — the exact condition that triggers the
+    // deadlock without the fix.
     tasks.push_back(
         [](std::shared_ptr<Context> ctx, std::shared_ptr<Channel> ch_in) -> Actor {
-            ShutdownAtExit c{ch_in};
             co_await ctx->executor()->schedule();
-            // Consume exactly one forwarded message, then tear down the network.
+            // Consume exactly one forwarded message.
             std::ignore = co_await ch_in->receive();
-            ctx->cancel_network();
+            // Shut down ch_in: causes drain()'s next send() to return false.
+            // Without the fix, drain() re-enters the while loop and deadlocks
+            // because the BoundedQueue semaphore is stuck at 0.
+            co_await ch_in->shutdown();
         }(ctx, ch_out)
     );
 
-    // Must complete without hanging.  cancel_network() does not throw; it just
-    // unblocks all blocked actors so the network drains cleanly.
-    run_actor_network(std::move(tasks), ctx);
+    // Must complete without hanging.
+    run_actor_network(std::move(tasks));
 }
 
 TEST_F(StreamingLineariser, ManyProducers) {
