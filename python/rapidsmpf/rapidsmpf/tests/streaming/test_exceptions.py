@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from rapidsmpf.error import BadAlloc, OutOfMemory, ReservationError
+from rapidsmpf.streaming._detail.libcoro_spawn_task import _make_exception
 from rapidsmpf.streaming.core.actor import define_actor, run_actor_network
 from rapidsmpf.streaming.core.leaf_actor import pull_from_channel
 
@@ -48,3 +50,27 @@ def test_task_exceptions(context: Context, py_executor: ThreadPoolExecutor) -> N
 
     messages = deferred.release()
     assert len(messages) == 0
+
+
+@pytest.mark.parametrize(
+    ("error_code", "expected_type"),
+    [
+        (-1, RuntimeError),
+        (0, MemoryError),
+        (1, TypeError),
+        (2, ValueError),
+        (3, IOError),
+        (4, IndexError),
+        (5, OverflowError),
+        (6, ArithmeticError),
+        (7, ReservationError),
+        (8, OutOfMemory),
+        (9, BadAlloc),
+        (999, RuntimeError),  # Unknown code falls back to RuntimeError.
+    ],
+)
+def test_make_exception_type_mapping(error_code: int, expected_type: type) -> None:
+    """_make_exception preserves exception type from the async bridge error code."""
+    exc = _make_exception(error_code, "test message")
+    assert isinstance(exc, expected_type)
+    assert "test message" in str(exc)

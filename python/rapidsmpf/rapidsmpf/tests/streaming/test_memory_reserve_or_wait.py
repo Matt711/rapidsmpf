@@ -21,6 +21,7 @@ from rapidsmpf.progress_thread import ProgressThread
 from rapidsmpf.rmm_resource_adaptor import RmmResourceAdaptor
 from rapidsmpf.streaming.core.actor import define_actor, run_actor_network
 from rapidsmpf.streaming.core.context import Context
+from rapidsmpf.error import ReservationError
 from rapidsmpf.streaming.core.memory_reserve_or_wait import (
     MemoryReserveOrWait,
     reserve_memory,
@@ -181,7 +182,9 @@ def test_reserve_or_wait_or_fail(py_executor: ThreadPoolExecutor) -> None:
         @define_actor()
         async def actor(ctx: Context) -> None:
             # Request cannot be satisfied and overbooking is not allowed.
-            with pytest.raises(RuntimeError):
+            # ReservationError (not RuntimeError) because the async bridge now
+            # preserves C++ exception types via cpp_set_py_future_typed.
+            with pytest.raises(ReservationError):
                 await mrow.reserve_or_wait_or_fail(size=2048, net_memory_delta=0)
 
         run_actor_network(
@@ -220,7 +223,7 @@ def test_reserve_memory_helper(py_executor: ThreadPoolExecutor) -> None:
             assert res.size == 2048
 
             # Exceeds limit, overbooking disabled, should fail.
-            with pytest.raises(RuntimeError):
+            with pytest.raises(ReservationError):
                 await reserve_memory(
                     ctx,
                     2048,
@@ -275,7 +278,7 @@ def test_reserve_memory_helper_allow_overbooking_by_default(
 
         @define_actor()
         async def actor(ctx: Context) -> None:
-            with pytest.raises(RuntimeError):
+            with pytest.raises(ReservationError):
                 await reserve_memory(
                     ctx,
                     2048,

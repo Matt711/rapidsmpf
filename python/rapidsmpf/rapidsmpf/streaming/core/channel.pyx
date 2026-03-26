@@ -8,7 +8,7 @@ from libcpp.memory cimport shared_ptr
 from libcpp.utility cimport move
 
 from rapidsmpf.owning_wrapper cimport cpp_OwningWrapper
-from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future
+from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future_typed
 from rapidsmpf.streaming.chunks.utils cimport py_deleter
 from rapidsmpf.streaming.core.context cimport Context, cpp_Context
 from rapidsmpf.streaming.core.message cimport Message, cpp_Message
@@ -29,13 +29,13 @@ cdef extern from * nogil:
     void cpp_channel_drain(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_drain_task(std::move(channel), ctx)
                 )
@@ -48,7 +48,7 @@ cdef extern from * nogil:
     void cpp_channel_drain(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -66,13 +66,13 @@ cdef extern from * nogil:
     void cpp_channel_drain_metadata(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_drain_metadata_task(std::move(channel), ctx)
                 )
@@ -85,7 +85,7 @@ cdef extern from * nogil:
     void cpp_channel_drain_metadata(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -102,13 +102,13 @@ cdef extern from * nogil:
     void cpp_channel_shutdown(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_shutdown_task(std::move(channel))
                 )
@@ -121,7 +121,7 @@ cdef extern from * nogil:
     void cpp_channel_shutdown(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -138,13 +138,13 @@ cdef extern from * nogil:
     void cpp_channel_shutdown_metadata(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_shutdown_metadata_task(std::move(channel))
                 )
@@ -157,7 +157,7 @@ cdef extern from * nogil:
     void cpp_channel_shutdown_metadata(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -176,13 +176,13 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
         rapidsmpf::streaming::Message msg,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_send_task(
                         std::move(channel),
@@ -199,7 +199,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
         cpp_Message msg,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -218,13 +218,13 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
         rapidsmpf::streaming::Message msg,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_send_metadata_task(
                         std::move(channel),
@@ -241,7 +241,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
         cpp_Message msg,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -259,14 +259,14 @@ cdef extern from * nogil:
     std::shared_ptr<rapidsmpf::streaming::Message> cpp_channel_recv(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto msg_output = std::make_shared<rapidsmpf::streaming::Message>();
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_recv_task(
                         std::move(channel),
@@ -283,7 +283,7 @@ cdef extern from * nogil:
     shared_ptr[cpp_Message] cpp_channel_recv(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -301,14 +301,14 @@ cdef extern from * nogil:
     std::shared_ptr<rapidsmpf::streaming::Message> cpp_channel_recv_metadata(
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         std::shared_ptr<rapidsmpf::streaming::Channel> channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto msg_output = std::make_shared<rapidsmpf::streaming::Message>();
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     channel_recv_metadata_task(
                         std::move(channel),
@@ -325,7 +325,7 @@ cdef extern from * nogil:
     shared_ptr[cpp_Message] cpp_channel_recv_metadata(
         shared_ptr[cpp_Context] ctx,
         shared_ptr[cpp_Channel] channel,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     )
 
@@ -369,7 +369,7 @@ cdef class Channel:
             cpp_channel_drain(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -389,7 +389,7 @@ cdef class Channel:
             cpp_channel_drain_metadata(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -415,7 +415,7 @@ cdef class Channel:
             cpp_channel_shutdown(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -437,7 +437,7 @@ cdef class Channel:
             cpp_channel_shutdown_metadata(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -464,7 +464,7 @@ cdef class Channel:
                 ctx._handle,
                 self._handle,
                 move(msg._handle),
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -491,7 +491,7 @@ cdef class Channel:
                 ctx._handle,
                 self._handle,
                 move(msg._handle),
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -517,7 +517,7 @@ cdef class Channel:
             c_msg = cpp_channel_recv(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter))
             )
         await ret
@@ -546,7 +546,7 @@ cdef class Channel:
             c_msg = cpp_channel_recv_metadata(
                 ctx._handle,
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter))
             )
         await ret

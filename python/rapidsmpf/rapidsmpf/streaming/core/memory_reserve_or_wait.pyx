@@ -15,7 +15,7 @@ from rapidsmpf.memory.buffer cimport MemoryType
 from rapidsmpf.memory.memory_reservation cimport (MemoryReservation,
                                                   cpp_MemoryReservation)
 from rapidsmpf.owning_wrapper cimport cpp_OwningWrapper
-from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future
+from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future_typed
 from rapidsmpf.streaming.chunks.utils cimport py_deleter
 from rapidsmpf.streaming.core.context cimport Context, cpp_Context
 
@@ -61,13 +61,13 @@ cdef extern from * nogil:
 
     void cpp_shutdown(
         std::shared_ptr<rapidsmpf::streaming::MemoryReserveOrWait> mrow,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         RAPIDSMPF_EXPECTS(
             mrow->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     shutdown_task(std::move(mrow))
                 )
@@ -79,7 +79,7 @@ cdef extern from * nogil:
     """
     void cpp_shutdown(
         shared_ptr[cpp_MemoryReserveOrWait] mrow,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     ) except +ex_handler
 
@@ -101,14 +101,14 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::MemoryReserveOrWait> mrow,
         std::size_t size,
         std::int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto output = std::make_shared<std::unique_ptr<rapidsmpf::MemoryReservation>>();
         RAPIDSMPF_EXPECTS(
             mrow->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     reserve_or_wait_task(
                         std::move(mrow),
@@ -128,7 +128,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_MemoryReserveOrWait] mrow,
         size_t size,
         int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     ) except +ex_handler
 
@@ -156,7 +156,7 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::MemoryReserveOrWait> mrow,
         std::size_t size,
         std::int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto output = std::make_shared<
@@ -165,7 +165,7 @@ cdef extern from * nogil:
         RAPIDSMPF_EXPECTS(
             mrow->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     reserve_or_wait_or_overbook_task(
                         std::move(mrow),
@@ -186,7 +186,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_MemoryReserveOrWait] mrow,
         size_t size,
         int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     ) except +ex_handler
 
@@ -208,14 +208,14 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::MemoryReserveOrWait> mrow,
         std::size_t size,
         std::int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto output = std::make_shared<std::unique_ptr<rapidsmpf::MemoryReservation>>();
         RAPIDSMPF_EXPECTS(
             mrow->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     reserve_or_wait_or_fail_task(
                         std::move(mrow),
@@ -235,7 +235,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_MemoryReserveOrWait] mrow,
         size_t size,
         int64_t net_memory_delta,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     ) except +ex_handler
 
@@ -332,7 +332,7 @@ cdef class MemoryReserveOrWait:
         with nogil:
             cpp_shutdown(
                 self._handle,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter)),
             )
         await ret
@@ -401,7 +401,7 @@ cdef class MemoryReserveOrWait:
                 self._handle,
                 size,
                 net_memory_delta,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>future, py_deleter))
             )
         await future
@@ -451,7 +451,7 @@ cdef class MemoryReserveOrWait:
                 self._handle,
                 size,
                 net_memory_delta,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>future, py_deleter)),
             )
         await future
@@ -504,7 +504,7 @@ cdef class MemoryReserveOrWait:
                 self._handle,
                 size,
                 net_memory_delta,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>future, py_deleter))
             )
         await future

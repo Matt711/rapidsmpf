@@ -15,7 +15,7 @@ from rapidsmpf.communicator.communicator cimport Communicator
 from rapidsmpf.memory.packed_data cimport (PackedData, cpp_PackedData,
                                            packed_data_vector_to_list)
 from rapidsmpf.owning_wrapper cimport cpp_OwningWrapper
-from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future
+from rapidsmpf.streaming._detail.libcoro_spawn_task cimport cpp_set_py_future_typed
 from rapidsmpf.streaming.chunks.utils cimport py_deleter
 from rapidsmpf.streaming.core.actor cimport CppActor, cpp_Actor
 from rapidsmpf.streaming.core.channel cimport Channel
@@ -39,14 +39,14 @@ cdef extern from * nogil:
         std::shared_ptr<rapidsmpf::streaming::Context> ctx,
         rapidsmpf::streaming::AllGather *gather,
         rapidsmpf::streaming::AllGather::Ordered ordered,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         rapidsmpf::OwningWrapper py_future
     ) {
         auto output = std::make_shared<std::vector<rapidsmpf::PackedData>>();
         RAPIDSMPF_EXPECTS(
             ctx->executor()->spawn_detached(
                 cython_libcoro_task_wrapper(
-                    cpp_set_py_future,
+                    cpp_set_py_future_typed,
                     std::move(py_future),
                     extract_all_task(gather, ordered, output)
                 )
@@ -61,7 +61,7 @@ cdef extern from * nogil:
         shared_ptr[cpp_Context] ctx,
         cpp_AllGather *gather,
         cpp_Ordered ordered,
-        void (*cpp_set_py_future)(void*, const char *),
+        void (*cpp_set_py_future_typed)(void*, int, const char *),
         cpp_OwningWrapper py_future
     ) except +ex_handler
 
@@ -147,7 +147,7 @@ cdef class AllGather:
                 ctx._handle,
                 self._handle.get(),
                 cpp_Ordered.YES if ordered else cpp_Ordered.NO,
-                cpp_set_py_future,
+                cpp_set_py_future_typed,
                 move(cpp_OwningWrapper(<void*><PyObject*>ret, py_deleter))
             )
         await ret
