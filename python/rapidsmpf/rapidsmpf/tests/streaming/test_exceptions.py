@@ -51,31 +51,36 @@ def test_task_exceptions(context: Context, py_executor: ThreadPoolExecutor) -> N
 
 def test_cancel_network_unblocks_unconnected_actor(
     context: Context,
+    py_executor: ThreadPoolExecutor,
 ) -> None:
     """
-    A Python actor that fails must unblock an unconnected actor blocked on a
-    channel recv via cancel_network().
+    cancel_network() must shut down all registered channels, unblocking any
+    actor that is blocked on a recv with no producer.
 
-    Without cancel_network(), the unconnected actor would block forever on
-    ch_b.recv() because no producer ever sends to or drains ch_b.
+    actor_calls_cancel calls ctx.cancel_network() and exits normally (no
+    exception raised). actor_waits is blocked on ch_in.recv() which has no
+    producer. Without cancel_network() being implemented, asyncio.gather
+    waits for both actors and hangs forever because actor_waits never
+    unblocks. With cancel_network(), ch_in is shut down and actor_waits
+    sees None and exits.
     """
 
     @define_actor()
-    async def actor_a_fails(ctx: Context, ch_dummy: Channel) -> None:
-        raise RuntimeError("actor_a_failure")
+    async def actor_calls_cancel(ctx: Context, ch_dummy: Channel) -> None:
+        # Broadcast shutdown to all channels — does not raise.
+        ctx.cancel_network()
 
     @define_actor()
-    async def actor_b_blocks(ctx: Context, ch_b: Channel) -> None:
-        # Blocks until ch_b is shut down by cancel_network().
-        await ch_b.recv(ctx)
+    async def actor_waits(ctx: Context, ch_in: Channel) -> None:
+        # Blocks until ch_in is shut down by cancel_network().
+        msg = await ch_in.recv(ctx)
+        assert msg is None
 
     ch_dummy: Channel[Payload] = context.create_channel()
-    ch_b: Channel[Payload] = context.create_channel()
+    ch_in: Channel[Payload] = context.create_channel()
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        with pytest.raises(RuntimeError, match="actor_a_failure"):
-            run_actor_network(
-                actors=[actor_a_fails(context, ch_dummy), actor_b_blocks(context, ch_b)],
-                py_executor=executor,
-                context=context,
-            )
+    run_actor_network(
+        actors=[actor_calls_cancel(context, ch_dummy), actor_waits(context, ch_in)],
+        py_executor=py_executor,
+        context=context,
+    )
