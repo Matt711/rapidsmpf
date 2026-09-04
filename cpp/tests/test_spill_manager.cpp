@@ -79,6 +79,67 @@ TEST(SpillManager, SpillFunction) {
     EXPECT_EQ(br->memory_available(MemoryType::DEVICE), 100_KiB);
 }
 
+TEST(SpillManager, SpillFunctionsAreIsolatedByMemoryType) {
+    if (!is_pinned_memory_resources_supported()) {
+        GTEST_SKIP() << "Pinned memory resources are not supported on this system";
+    }
+
+    std::int64_t device_available = 10_KiB;
+    std::int64_t pinned_available = 10_KiB;
+    auto br = BufferResource::create(
+        rmm::mr::get_current_device_resource_ref(),
+        PinnedPoolProperties{},
+        {{MemoryType::DEVICE, device_available},
+         {MemoryType::PINNED_HOST, pinned_available}}
+    );
+
+    std::size_t device_calls = 0;
+    SpillManager::SpillFunction device_func = [&](std::size_t amount) -> std::size_t {
+        ++device_calls;
+        device_available += safe_cast<std::int64_t>(amount);
+        br->set_memory_limit(MemoryType::DEVICE, device_available);
+        return amount;
+    };
+    std::size_t pinned_calls = 0;
+    SpillManager::SpillFunction pinned_func = [&](std::size_t amount) -> std::size_t {
+        ++pinned_calls;
+        pinned_available += safe_cast<std::int64_t>(amount);
+        br->set_memory_limit(MemoryType::PINNED_HOST, pinned_available);
+        return amount;
+    };
+    br->spill_manager().add_spill_function(
+        device_func, /* priority = */ 0, MemoryType::DEVICE
+    );
+    auto pinned_fid = br->spill_manager().add_spill_function(
+        pinned_func, /* priority = */ 0, MemoryType::PINNED_HOST
+    );
+
+    // Spilling DEVICE only ever calls the DEVICE function.
+    EXPECT_EQ(br->spill_manager().spill(5_KiB, MemoryType::DEVICE), 5_KiB);
+    EXPECT_EQ(device_calls, 1);
+    EXPECT_EQ(pinned_calls, 0);
+
+    // Spilling PINNED_HOST only ever calls the PINNED_HOST function.
+    EXPECT_EQ(br->spill_manager().spill(5_KiB, MemoryType::PINNED_HOST), 5_KiB);
+    EXPECT_EQ(device_calls, 1);
+    EXPECT_EQ(pinned_calls, 1);
+
+    // `spill_to_make_headroom` respects the same isolation.
+    EXPECT_EQ(
+        br->spill_manager().spill_to_make_headroom(100_KiB, MemoryType::PINNED_HOST),
+        85_KiB
+    );
+    EXPECT_EQ(device_calls, 1);
+    EXPECT_EQ(pinned_calls, 2);
+
+    // Removing the PINNED_HOST function doesn't touch the DEVICE one.
+    br->spill_manager().remove_spill_function(pinned_fid);
+    EXPECT_EQ(br->spill_manager().spill(5_KiB, MemoryType::PINNED_HOST), 0);
+    EXPECT_EQ(br->spill_manager().spill(5_KiB, MemoryType::DEVICE), 5_KiB);
+    EXPECT_EQ(device_calls, 2);
+    EXPECT_EQ(pinned_calls, 2);
+}
+
 TEST(SpillManager, HeadroomAccountsForReservations) {
     // As in `SpillFunction`, availability is driven by the DEVICE limit since no real
     // allocations occur.

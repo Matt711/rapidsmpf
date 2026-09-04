@@ -208,17 +208,15 @@ coro::task<void> MemoryReserveOrWait::periodic_memory_check() {
     // non-blocking spill found the spill lock held.
     bool spill_failure_logged = false;
     auto make_headroom = [&](std::size_t headroom, bool blocking) -> bool {
-        // Only device memory is supported, see `spill_to_make_headroom()`.
-        if (mem_type_ != MemoryType::DEVICE) {
-            return true;
-        }
         try {
             auto const target = safe_cast<std::int64_t>(headroom);
             if (blocking) {
-                br_->spill_manager().spill_to_make_headroom(target);
+                br_->spill_manager().spill_to_make_headroom(target, mem_type_);
                 return true;
             }
-            return br_->spill_manager().try_spill_to_make_headroom(target).has_value();
+            return br_->spill_manager()
+                .try_spill_to_make_headroom(target, mem_type_)
+                .has_value();
         } catch (...) {
             if (!std::exchange(spill_failure_logged, true)) {
                 try {

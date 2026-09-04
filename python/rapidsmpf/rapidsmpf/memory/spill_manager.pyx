@@ -7,6 +7,7 @@ from libc.stddef cimport size_t
 from rapidsmpf._detail.exception_handling cimport (
     CppExcept, ex_handler, throw_py_as_cpp_exception,
     translate_py_to_cpp_exception)
+from rapidsmpf.memory.buffer cimport MemoryType
 from rapidsmpf.memory.buffer_resource cimport BufferResource
 
 import weakref
@@ -115,11 +116,14 @@ cdef class SpillManager:
         if self._br() is None:
             raise ValueError("The BufferResource must outlive the spill manager")
 
-    def add_spill_function(self, func, int priority):
+    def add_spill_function(self, func, int priority, mem_type=None):
         """
         Adds a spill function with a given priority to the spill manager.
 
-        The spill function is prioritized according to the specified priority value.
+        The spill function is prioritized according to the specified priority
+        value, among other spill functions registered for the same
+        ``mem_type``. A spill request for one memory type only ever invokes
+        spill functions registered for that same memory type.
 
         Parameters
         ----------
@@ -128,19 +132,26 @@ cdef class SpillManager:
         priority
             The priority level of the spill function (higher values indicate higher
             priority).
+        mem_type
+            The memory type this spill function frees up room for. Defaults
+            to :attr:`~.MemoryType.DEVICE`.
 
         Returns
         -------
         The ID assigned to the newly added spill function.
         """
         self._valid_buffer_resource()
+        cdef MemoryType c_mem_type = (
+            MemoryType.DEVICE if mem_type is None else mem_type
+        )
         cdef size_t func_id
         with nogil:
             func_id = deref(self._handle).add_spill_function(
                 cython_to_cpp_closure_lambda(
                     cython_invoke_python_spill_function, <void *>func
                 ),
-                priority
+                priority,
+                c_mem_type,
             )
         self._spill_functions[func_id] = func
         return func_id
@@ -162,18 +173,22 @@ cdef class SpillManager:
             deref(self._handle).remove_spill_function(function_id)
         del self._spill_functions[function_id]
 
-    def spill(self, size_t amount):
+    def spill(self, size_t amount, mem_type=None):
         """
         Initiates spilling to free up a specified amount of memory.
 
-        This method iterates through registered spill functions in priority order,
-        invoking them until at least the requested amount of memory has been spilled
-        or no more spilling is possible.
+        This method iterates through spill functions registered for
+        ``mem_type`` in priority order, invoking them until at least the
+        requested amount of memory has been spilled or no more spilling is
+        possible.
 
         Parameters
         ----------
         amount
             The amount of memory (in bytes) to spill.
+        mem_type
+            The memory type to free up room for. Defaults to
+            :attr:`~.MemoryType.DEVICE`.
 
         Returns
         -------
@@ -181,20 +196,24 @@ cdef class SpillManager:
         or equal to the requested amount.
         """
         self._valid_buffer_resource()
+        cdef MemoryType c_mem_type = (
+            MemoryType.DEVICE if mem_type is None else mem_type
+        )
         cdef size_t ret
         with nogil:
-            ret = deref(self._handle).spill(amount)
+            ret = deref(self._handle).spill(amount, c_mem_type)
         return ret
 
-    def spill_to_make_headroom(self, int64_t headroom = 0):
+    def spill_to_make_headroom(self, int64_t headroom = 0, mem_type=None):
         """
         Attempts to free memory by spilling until the requested headroom is reservable.
 
         The headroom measurement is a snapshot, so a later ``reserve()`` of
         ``headroom`` bytes is not guaranteed to succeed. Spilling is performed
-        in order of the function priorities until the requested headroom is
-        reservable or no more spilling is possible. Spilling reduces
-        allocations, never outstanding reservations.
+        in order of the function priorities, among spill functions registered
+        for ``mem_type``, until the requested headroom is reservable or no
+        more spilling is possible. Spilling reduces allocations, never
+        outstanding reservations.
 
         Parameters
         ----------
@@ -202,6 +221,9 @@ cdef class SpillManager:
             The target amount of headroom (in bytes). A negative headroom
             triggers spilling only once the memory available for reservation
             drops below ``headroom``.
+        mem_type
+            The memory type to free up headroom for. Defaults to
+            :attr:`~.MemoryType.DEVICE`.
 
         Returns
         -------
@@ -214,7 +236,10 @@ cdef class SpillManager:
         BufferResource.memory_available_for_reservation
         """
         self._valid_buffer_resource()
+        cdef MemoryType c_mem_type = (
+            MemoryType.DEVICE if mem_type is None else mem_type
+        )
         cdef size_t ret
         with nogil:
-            ret = deref(self._handle).spill_to_make_headroom(headroom)
+            ret = deref(self._handle).spill_to_make_headroom(headroom, c_mem_type)
         return ret

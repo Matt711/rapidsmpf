@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
@@ -10,6 +10,10 @@ import pytest
 from rapidsmpf.error import BadAlloc, OutOfMemory, ReservationError
 from rapidsmpf.memory.buffer import MemoryType
 from rapidsmpf.memory.buffer_resource import BufferResource
+from rapidsmpf.memory.pinned_memory_resource import (
+    PinnedPoolProperties,
+    is_pinned_memory_resources_supported,
+)
 
 if TYPE_CHECKING:
     import rmm.mr
@@ -85,6 +89,51 @@ def test_spill_function(
     br.spill_manager.remove_spill_function(f2)
     assert br.spill_manager.spill(10) == 0
     assert track_spilled[0] == 10
+
+
+def test_spill_functions_are_isolated_by_memory_type(
+    device_mr: rmm.mr.CudaMemoryResource,
+) -> None:
+    if not is_pinned_memory_resources_supported():
+        pytest.skip("Pinned memory resources are not supported on this system")
+
+    br = BufferResource(
+        device_mr,
+        pinned_pool_properties=PinnedPoolProperties(),
+        memory_limits={MemoryType.DEVICE: 10, MemoryType.PINNED_HOST: 10},
+        periodic_spill_check=None,
+    )
+
+    device_calls = [0]
+
+    def device_spill(amount: int) -> int:
+        device_calls[0] += 1
+        return amount
+
+    pinned_calls = [0]
+
+    def pinned_spill(amount: int) -> int:
+        pinned_calls[0] += 1
+        return amount
+
+    br.spill_manager.add_spill_function(device_spill, 0, MemoryType.DEVICE)
+    pinned_fid = br.spill_manager.add_spill_function(
+        pinned_spill, 0, MemoryType.PINNED_HOST
+    )
+
+    assert br.spill_manager.spill(5, MemoryType.DEVICE) == 5
+    assert device_calls[0] == 1
+    assert pinned_calls[0] == 0
+
+    assert br.spill_manager.spill(5, MemoryType.PINNED_HOST) == 5
+    assert device_calls[0] == 1
+    assert pinned_calls[0] == 1
+
+    br.spill_manager.remove_spill_function(pinned_fid)
+    assert br.spill_manager.spill(5, MemoryType.PINNED_HOST) == 0
+    assert br.spill_manager.spill(5, MemoryType.DEVICE) == 5
+    assert device_calls[0] == 2
+    assert pinned_calls[0] == 1
 
 
 def test_spill_function_outlive_buffer_resource(

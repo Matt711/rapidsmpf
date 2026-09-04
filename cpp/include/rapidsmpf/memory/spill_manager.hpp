@@ -5,10 +5,12 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <mutex>
 #include <optional>
 
+#include <rapidsmpf/memory/memory_type.hpp>
 #include <rapidsmpf/pausable_thread_loop.hpp>
 #include <rapidsmpf/utils/misc.hpp>
 
@@ -71,14 +73,22 @@ class SpillManager {
     /**
      * @brief Adds a spill function with a given priority to the spill manager.
      *
-     * The spill function is prioritized according to the specified priority value.
+     * The spill function is prioritized according to the specified priority value,
+     * among other spill functions registered for the same @p mem_type. A spill
+     * request for one memory type only ever invokes spill functions registered for
+     * that same memory type.
      *
      * @param spill_function The spill function to be added.
      * @param priority The priority level of the spill function (higher values indicate
      * higher priority).
+     * @param mem_type The memory type this spill function frees up room for.
      * @return The id assigned to the newly added spill function.
      */
-    SpillFunctionID add_spill_function(SpillFunction spill_function, int priority);
+    SpillFunctionID add_spill_function(
+        SpillFunction spill_function,
+        int priority,
+        MemoryType mem_type = MemoryType::DEVICE
+    );
 
     /**
      * @brief Removes a spill function from the spill manager.
@@ -94,15 +104,16 @@ class SpillManager {
     /**
      * @brief Initiates spilling to free up a specified amount of memory.
      *
-     * This method iterates through registered spill functions in priority order, invoking
-     * them until at least the requested amount of memory has been spilled or no more
-     * spilling is possible.
+     * This method iterates through spill functions registered for @p mem_type in
+     * priority order, invoking them until at least the requested amount of memory
+     * has been spilled or no more spilling is possible.
      *
      * @param amount The amount of memory (in bytes) to spill.
+     * @param mem_type The memory type to free up room for.
      * @return The actual amount of memory spilled (in bytes), which may be more, less
      * or equal to the requested.
      */
-    std::size_t spill(std::size_t amount);
+    std::size_t spill(std::size_t amount, MemoryType mem_type = MemoryType::DEVICE);
 
     /**
      * @brief Attempts to free up memory by spilling data until the requested headroom is
@@ -110,19 +121,23 @@ class SpillManager {
      *
      * The headroom measurement is a snapshot, so a later `reserve()` of `headroom` bytes
      * is not guaranteed to succeed. Spilling is performed in order of the function
-     * priorities until the requested headroom is reservable or no more spilling is
-     * possible. Spilling reduces allocations, never outstanding reservations.
+     * priorities, among spill functions registered for @p mem_type, until the requested
+     * headroom is reservable or no more spilling is possible. Spilling reduces
+     * allocations, never outstanding reservations.
      *
      * @param headroom The target amount of headroom (in bytes). A negative headroom
      * triggers spilling only once the memory available for reservation drops below
      * `headroom`.
+     * @param mem_type The memory type to free up headroom for.
      * @return The actual amount of memory spilled (in bytes), which may be less than
      * requested if there is insufficient spillable data, but may also be more
      * or equal to requested depending on the sizes of spillable data buffers.
      *
      * @see BufferResource::memory_available_for_reservation()
      */
-    std::size_t spill_to_make_headroom(std::int64_t headroom = 0);
+    std::size_t spill_to_make_headroom(
+        std::int64_t headroom = 0, MemoryType mem_type = MemoryType::DEVICE
+    );
 
     /**
      * @brief Non-blocking version of `spill_to_make_headroom()`.
@@ -134,37 +149,53 @@ class SpillManager {
      * @param headroom The target amount of headroom (in bytes). A negative headroom
      * triggers spilling only once the memory available for reservation drops below
      * `headroom`.
+     * @param mem_type The memory type to free up headroom for.
      * @return The actual amount of memory spilled (in bytes), or `std::nullopt` if no
      * spill was attempted. A `std::nullopt` result does not imply that spilling is
      * impossible or that another spill is in progress. Callers should retry.
      *
      * @see spill_to_make_headroom()
      */
-    std::optional<std::size_t> try_spill_to_make_headroom(std::int64_t headroom = 0);
+    std::optional<std::size_t> try_spill_to_make_headroom(
+        std::int64_t headroom = 0, MemoryType mem_type = MemoryType::DEVICE
+    );
 
   private:
     /**
      * @brief Spills memory without locking. The caller must hold `mutex_`.
      *
      * @param amount The amount of memory (in bytes) to spill.
+     * @param mem_type The memory type to free up room for.
      * @return The actual amount of memory spilled (in bytes).
      */
-    std::size_t spill_unsafe(std::size_t amount);
+    std::size_t spill_unsafe(std::size_t amount, MemoryType mem_type);
 
     /**
      * @brief Spills to reach the requested headroom without locking, reading the
      * available memory under the caller's lock. The caller must hold `mutex_`.
      *
      * @param headroom The target amount of headroom (in bytes).
+     * @param mem_type The memory type to free up headroom for.
      * @return The actual amount of memory spilled (in bytes).
      */
-    std::size_t spill_to_make_headroom_unsafe(std::int64_t headroom);
+    std::size_t spill_to_make_headroom_unsafe(std::int64_t headroom, MemoryType mem_type);
+
+    /**
+     * @brief Index of @p mem_type's spill function registry in `spill_functions_` and
+     * `spill_function_priorities_`.
+     *
+     * @param mem_type The memory type.
+     * @return The index into the per-memory-type registry arrays.
+     */
+    static std::size_t registry_index(MemoryType mem_type) noexcept;
 
     mutable std::mutex mutex_;
     BufferResource* br_;
     std::size_t spill_function_id_counter_{0};
-    std::map<SpillFunctionID, SpillFunction> spill_functions_;
-    std::multimap<int, SpillFunctionID, std::greater<>> spill_function_priorities_;
+    std::array<std::map<SpillFunctionID, SpillFunction>, MEMORY_TYPES.size()>
+        spill_functions_;
+    std::array<std::multimap<int, SpillFunctionID, std::greater<>>, MEMORY_TYPES.size()>
+        spill_function_priorities_;
     std::optional<detail::PausableThreadLoop> periodic_spill_thread_;
 };
 
